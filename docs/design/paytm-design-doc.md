@@ -9,15 +9,15 @@ The goal is to build a unified lakehouse platform capable of ingesting and servi
 The platform supports five ingestion families:
 
 - Transactional databases
-    
+
 - Event streams
-    
+
 - Partner/vendor file drops
-    
+
 - Third-party APIs
-    
+
 - Operational spreadsheets
-    
+
 
 Application telemetry and business events can use the event-stream ingestion pattern where appropriate.
 
@@ -26,46 +26,46 @@ Application telemetry and business events can use the event-stream ingestion pat
 **Analysts / Finance**
 
 - dashboards and KPIs;
-    
+
 - historical analysis;
-    
+
 - ad-hoc SQL;
-    
+
 - financial reconciliation;
-    
+
 - governed business metrics.
 
 **Applications**
 
 - consume trusted data through Gold/warehouse-backed services or a specialized serving store;
-    
+
 - seconds-level response is sufficient for the assumed application workloads;
-    
+
 - no hard millisecond/microsecond key-value lookup requirement is assumed.
 
 **Data Scientists**
 
 - offline feature engineering;
-    
+
 - historical analysis;
-    
+
 - model training.
-    
+
 
 **Auditors**
 
 - lineage and provenance;
-    
+
 - transaction traceability;
-    
+
 - DQ and reconciliation evidence;
-    
+
 - pipeline execution history;
-    
+
 - access/security history;
-    
+
 - end-to-end auditability.
-    
+
 
 ---
 
@@ -74,35 +74,35 @@ Application telemetry and business events can use the event-stream ingestion pat
 ## 2.1 Working Assumptions
 
 - Standard analytical reporting requires **minutes-level freshness**.
-    
+
 - Finance prioritizes correctness over latency.
-    
+
 - Some operational dashboards over event data may require **few-second freshness**, for example recent order/payment aggregates.
-    
+
 - Application response latency can be in seconds; hard millisecond or microsecond lookup is not assumed.
-    
+
 - Data Scientists primarily consume offline Silver/Gold datasets; no online feature store is assumed.
-    
+
 - Transactional CDC requires minutes-level lakehouse freshness.
-    
+
 - CDC volume is assumed to be approximately **100M changes/day** for sizing only.
-    
+
 - Average event size is assumed to be approximately **1 KB**.
-    
+
 - Average external-file row size is assumed to be approximately **500 bytes**.
-    
+
 - Average event-stream load is assumed to be approximately **3K events/sec**, against the brief-provided ~10K/sec peak.
-    
+
 - API and spreadsheet volume is assumed to be relatively small compared with the 500M file-row/day envelope.
-    
+
 - Approximately **2.5–3× raw/source-equivalent storage** is assumed after Raw, transformed lakehouse layers and selected serving copies.
-    
+
 - Five years of history is retained. Approximately one year is assumed to remain in hot/actively queried storage; older data can move to cheaper cold/archive storage.
-    
+
 - A broad **minute-level recovery objective** is assumed rather than committing to an exact RTO/RPO.
-    
+
 - Standard enterprise PII controls are assumed. No additional residency/deletion requirement beyond the brief is assumed.
-    
+
 
 ## 2.2 Capacity Inputs
 
@@ -124,15 +124,15 @@ Application telemetry and business events can use the event-stream ingestion pat
 At the above working assumptions:
 
 - event data ≈ **259M events/day**;
-    
+
 - combined event + file + CDC volume ≈ **859M records/day**;
-    
+
 - raw/source-equivalent data ≈ **0.6 TB/day**;
-    
+
 - five-year raw/source-equivalent footprint ≈ **1.1 PB**;
-    
+
 - approximate total lakehouse/serving footprint at 2.5–3× ≈ **2.8–3.3 PB**.
-    
+
 
 These are directional sizing numbers, not infrastructure commitments.
 
@@ -161,15 +161,15 @@ We use **one ingestion framework with source-specific adapters**. Each source tr
 ## 4.1 Common Ingestion Principles
 
 - **Immutable landing:** We preserve source data in immutable object storage such as **Amazon S3** for replay, audit and reprocessing.
-    
+
 - **Lakehouse conversion:** After validation, we organize data into **Apache Iceberg** tables using a Bronze–Silver–Gold Medallion architecture.
-    
+
 - **Progress tracking:** We track source-native progress through CDC checkpoints, Kafka offsets, object versions, API cursors or snapshot versions.
-    
+
 - **Controls & recovery:** All adapters validate contracts, maintain idempotency, capture audit evidence, reconcile expected vs processed data, quarantine critical failures and support replay.
-    
+
 - **Orchestration:** We use **Airflow** where schedules, dependencies, retries, reconciliation or backfills require workflow coordination.
-    
+
 
 ---
 
@@ -209,10 +209,12 @@ Kafka improves decoupling and latency but adds continuous infrastructure and ope
 
 Events enter a durable streaming backbone such as **Kafka** and follow two paths:
 
-**Historical:**  
+**Historical:**
+
 **Kafka → Immutable S3 Raw → Spark → Iceberg Bronze → Silver/Gold**
 
-**Real-time:**  
+**Real-time:**
+
 **Kafka → Flink → Real-time Serving**
 
 We retain the S3 path for durable history, replay and audit, while Flink handles stateful/event-time workloads requiring few-second freshness.
@@ -398,9 +400,9 @@ We design processing units so the same input can be executed repeatedly without 
 Depending on the workload, Spark writes use:
 
 - deterministic partition replacement; or
-    
+
 - key-based `MERGE`/upsert into Iceberg.
-    
+
 
 Retries run the **same processing logic**; we do not maintain separate retry-specific write paths.
 
@@ -411,13 +413,13 @@ We retry from a well-defined processing boundary rather than continuing from an 
 Examples:
 
 - file → replay the file;
-    
+
 - CDC → replay the landed change range;
-    
+
 - partition → recompute the partition;
-    
+
 - API payload → replay the immutable landed response.
-    
+
 
 Airflow manages retries and dependencies; Spark/Iceberg provide deterministic processing and atomic table commits.
 
@@ -444,17 +446,17 @@ We use reconciliation to detect unexpected loss, duplication or value corruption
 Depending on dataset criticality, controls include:
 
 - source vs Raw counts;
-    
+
 - Raw vs Bronze counts;
-    
+
 - business-key counts;
-    
+
 - `SUM(amount_paise)` and other financial control totals;
-    
+
 - trusted input vs trusted output;
-    
+
 - selected real-time vs historical results.
-    
+
 
 For large datasets, we compare partition/control totals first and perform exact row-level comparison only for mismatching scopes.
 
@@ -477,11 +479,11 @@ For Gold aggregates, we recompute the affected scope rather than manually patchi
 Flink checkpoints preserve:
 
 - Kafka source position;
-    
+
 - keyed/operator state;
-    
+
 - window state.
-    
+
 
 On failure:
 
@@ -500,17 +502,17 @@ We choose **active-passive regional recovery** under the current minute-level re
 Recovery covers:
 
 - S3/Iceberg data;
-    
+
 - catalog metadata;
-    
+
 - Airflow metadata/configuration;
-    
+
 - schema configuration;
-    
+
 - Flink checkpoints;
-    
+
 - infrastructure and secrets references.
-    
+
 
 Exact RTO/RPO remains a production-validation item because it depends on replication guarantees and business criticality.
 
@@ -539,15 +541,15 @@ We treat trust as a combination of **discoverability, access control, data quali
 We use **Unity Catalog** as the central technical catalog for:
 
 - schemas, tables and columns;
-    
+
 - ownership;
-    
+
 - business/technical metadata;
-    
+
 - lineage for supported Databricks workloads;
-    
+
 - governed access to Iceberg/S3 data.
-    
+
 
 External systems may require connector/API-based lineage registration; we do not assume every external field-level relationship appears automatically.
 
@@ -585,15 +587,15 @@ A `BLOCK` result prevents trusted publication.
 We combine platform-native lineage/execution evidence with structured audit tables such as:
 
 - `audit.ingestion_run`
-    
+
 - `audit.pipeline_run`
-    
+
 - `audit.dq_result`
-    
+
 - `audit.reconciliation_result`
-    
+
 - `audit.backfill_recovery`
-    
+
 
 The objective is to reconstruct:
 
@@ -604,9 +606,9 @@ The objective is to reconstruct:
 We monitor:
 
 - **Operational:** jobs, runtime, retries, failures, infrastructure.
-    
+
 - **Data:** freshness, volume, schema drift, DQ and reconciliation.
-    
+
 - **Business:** transaction volumes, financial totals and important domain KPIs.
 
 
@@ -624,7 +626,7 @@ Alerts →   Deterministic Monitoring →    Alert/Event →  AI-assisted Triage
 																   ├─ summarize incident
 																   ├─ blast-radius analysis
 																   └─ probable root cause
-    
+
 ---
 
 # 8. Data Model & Serving
@@ -636,19 +638,19 @@ We model Gold around **business entities and consumer access patterns**, using d
 Representative entities include:
 
 - Customer
-    
+
 - Payment / Transaction
-    
+
 - Recharge
-    
+
 - Loan
-    
+
 - Repayment
-    
+
 - Insurance Policy
-    
+
 - Claim
-    
+
 
 Where deterministic mappings exist, we use a canonical customer identifier across business domains; we do not assume probabilistic identity resolution.
 
@@ -661,26 +663,26 @@ For analytical reporting, we use **star-schema style models** with explicit fact
 Representative facts:
 
 - `fact_payment`
-    
+
 - `fact_recharge`
-    
+
 - `fact_loan_repayment`
-    
+
 - `fact_claim`
-    
+
 
 Representative dimensions:
 
 - `dim_customer`
-    
+
 - `dim_date`
-    
+
 - `dim_product`
-    
+
 - `dim_provider`
-    
+
 - `dim_location`
-    
+
 
 ### Example Fact — `fact_payment`
 
@@ -771,9 +773,9 @@ or:
 Requirement-driven alternatives:
 
 - **OpenSearch** for full-text/fuzzy search;
-    
+
 - **DynamoDB/Aerospike/Redis** for hard millisecond key-value access.
-    
+
 
 ### 8.3.3 Data Scientists
 
@@ -854,7 +856,8 @@ Our target is:
 
 ## Solution
 
-**Solution:**  
+**Solution:**
+
 **Kafka → Flink → Transactional / Idempotent Sink**
 
 Stable `event_id` + bounded deduplication handles duplicates. Event time + watermark/allowed lateness handles disorder. Flink checkpoints preserve Kafka position and processing state. Transactional or idempotent sink writes prevent duplicate committed output after replay.
@@ -944,38 +947,38 @@ First compare row/business-key counts, `SUM(amount_paise)` and required control 
 We do not introduce:
 
 - online feature store / real-time ML serving;
-    
+
 - probabilistic identity resolution;
-    
+
 - custom ML anomaly-detection platform;
-    
+
 - exhaustive enterprise data model;
-    
+
 - active-active regional processing.
-    
+
 
 ## 13.2 Production Validation Required
 
 Before production sizing we would validate:
 
 - actual freshness SLAs;
-    
+
 - application access patterns;
-    
+
 - CDC volume/burstiness;
-    
+
 - event/file sizes;
-    
+
 - Spark skew/workload profiles;
-    
+
 - concurrency;
-    
+
 - late-event distribution;
-    
+
 - regulatory requirements;
-    
+
 - formal RTO/RPO.
-    
+
 
 ## 13.3 Likely First Pressure Points
 
