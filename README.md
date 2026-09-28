@@ -50,10 +50,10 @@ do not start local substitutes for Kafka, Flink, ClickHouse, Spark, Iceberg, or 
 ## Documentation
 
 - [Deep dives and guarantees](DEEP_DIVES.md)
+- [Design document (PDF)](docs/design/paytm-design-doc.pdf)
+- [Design document (Markdown)](docs/design/paytm-design-doc.md)
+- [Architecture decision records](docs/adr/README.md)
 - [Repository specification](SPEC.md)
-
-The final design, architecture decisions, agent guidance, and working-infrastructure path are kept
-under `docs/` and are linked here as they are added.
 
 ## Making it operational
 
