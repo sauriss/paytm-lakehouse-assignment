@@ -58,21 +58,26 @@ than a fake Spark runtime.
 **Problem:** A critical financial aggregate must identify the exact transactions used at publish
 time; rerunning an old query is not sufficient audit evidence.
 
-**Architecture:** `STARTED → DATA_WRITTEN → EVIDENCE_RECORDED → CONTROLS_VERIFIED → COMPLETE`.
-Only COMPLETE runs are visible, and tracing reads persisted contribution rows.
+**Architecture:** `STARTED → stage hidden aggregate → DATA_WRITTEN → EVIDENCE_RECORDED →
+CONTROLS_VERIFIED → promote → COMPLETE`. Tracing reads persisted contribution rows scoped by
+`metric_run_id + aggregate_key`.
 
-**Guarantee:** Missing evidence or count/total/control failure transitions the run to
-`AUDIT_FAILED`; it cannot become visible or return partial lineage. The guarantee lives in
-`publish_critical_metric` and `trace_metric_to_transactions`.
+**Guarantee:** State transitions cannot be skipped. Contribution evidence, expected controls, and
+the writer's committed count/total/snapshot receipt must reconcile before promotion. Missing or
+mismatched evidence transitions the run to `AUDIT_FAILED`; visibility requires both promotion and
+COMPLETE audit state. The guarantee lives in `publish_critical_metric`,
+`is_metric_consumer_visible`, and `trace_metric_to_transactions`.
 
 **Boundary / assumption:** The data commit and audit-store write are not one atomic transaction.
-The durable audit store must atomically record one run's evidence, and consumers must filter on
-COMPLETE. Normal BI metrics avoid row-level mappings: they use detailed Gold facts, an immutable
-Iceberg snapshot, and a versioned metric definition for on-demand reconstruction.
+The durable audit store must atomically record one run's evidence, and the serving layer must
+enforce both promotion and COMPLETE state. A run is scoped to one aggregate key. Normal BI metrics
+avoid row-level mappings: they use detailed Gold facts, an immutable Iceberg snapshot, and a
+versioned metric definition for on-demand reconstruction.
 
 **Tests:** `test_completed_metric_traces_exact_persisted_contributors`,
 `test_metric_without_contribution_evidence_is_not_visible`, and
-`test_control_mismatch_prevents_completion`.
+`test_control_mismatch_prevents_completion`, plus committed-output mismatch and invalid-transition
+tests.
 
 ## Local checks
 
