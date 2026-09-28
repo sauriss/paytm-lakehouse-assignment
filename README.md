@@ -47,6 +47,10 @@ On Windows, activate the environment and use the equivalent commands under `.ven
 The unit tests execute the guarantee-bearing domain and policy logic directly. They intentionally
 do not start local substitutes for Kafka, Flink, ClickHouse, Spark, Iceberg, or cloud services.
 
+GitHub Actions run the same format, lint, and unit-test commands for pushes to `main` and pull
+requests. A separate lightweight Gitleaks workflow checks repository history for accidentally
+committed passwords, tokens, and other secrets.
+
 ## Documentation
 
 - [Deep dives and guarantees](DEEP_DIVES.md)
