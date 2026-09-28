@@ -1,103 +1,70 @@
-# Paytm Lakehouse — Hard Problems
+# Paytm Lakehouse Assignment
 
-This repository isolates three correctness guarantees from the Paytm lakehouse design. It is
-deliberately not an end-to-end platform: infrastructure is stubbed where a local example would
-otherwise imply guarantees that Kafka, Flink, ClickHouse, Spark, Iceberg, and an audit store do
-not share automatically.
+> **Reviewing the guarantee-bearing implementation? Start with
+> [Deep Dives](DEEP_DIVES.md).** It maps each hard problem to its implementation boundary,
+> assumptions, and failure-mode tests.
+
+This repository accompanies the Paytm lakehouse design submission. It contains three deliberately
+small Python deep dives that demonstrate streaming correctness, a scalable data-quality publish
+gate, and exact contribution lineage for critical financial metrics.
+
+The repository is not a deployable data platform. Kafka, Flink, ClickHouse, Spark, Iceberg, object
+storage, and the audit store remain explicit external boundaries rather than misleading local
+simulations.
+
+## Repository map
 
 ```text
 src/paytm_deep_dives/
-├── streaming_correctness/  # PyFlink topology + ClickHouse boundary
-├── data_quality/           # Rules, decision engine, publish gate
-└── auditability/           # Critical-metric lifecycle + exact lineage
-tests/                      # Behaviour tests for the failure modes
+├── streaming_correctness/  # Event-time deduplication and idempotent sink boundary
+├── data_quality/           # Contract checks, decisions, and trusted publish gate
+└── auditability/           # Critical-metric evidence and publication lifecycle
+tests/                      # Behaviour tests for the stated guarantees
+DEEP_DIVES.md               # Detailed guarantee, boundary, and test explanations
+SPEC.md                     # Lightweight repository requirements
+docs/                       # Design, decisions, and implementation guidance
 ```
 
-## Streaming Correctness
+## Local setup
 
-**Problem:** Kafka can duplicate, reorder, delay, or replay events after failure.
-
-**Architecture:** `KafkaSource → event-time watermarks → keyed TTL dedup → event-time window →
-IdempotentClickHouseSink`.
-
-**Guarantee:** A stable `event_id` contributes once within the supported TTL, and replaying the
-same deterministic window result does not create a second logical business result. The guarantee
-lives in Flink keyed state/checkpoints plus the sink's deterministic upsert contract.
-
-**Boundary / assumption:** Flink checkpoints source position and operator state; they do not form
-a distributed transaction with ClickHouse. Production must configure durable checkpoint storage
-and a ClickHouse table/write/query contract that makes repeated result IDs idempotent. With
-`ReplacingMergeTree`, background replacement is asynchronous, so immediate reads require a
-correct query strategy such as `FINAL` (or an equivalent serving contract).
-
-**Tests:** `test_duplicate_and_out_of_order_events_use_event_time_once` and
-`test_replayed_result_does_not_double_count`. Real recovery remains an integration scenario:
-complete a checkpoint, process more records, kill a task, restore, replay, and compare with an
-uninterrupted baseline.
-
-## Scalable Data Quality Gate
-
-**Problem:** Expensive scans should not run after an obvious contract break, and failed critical
-rules must never reach the trusted dataset.
-
-**Architecture:** `pre-flight rules → PySpark rules → decision engine → publish_if_allowed`.
-
-**Guarantee:** Any BLOCK result returns before `trusted_writer`; WARN publishes while recording
-warning evidence and invoking notification. The guarantee lives in `publish_if_allowed`.
-
-**Boundary / assumption:** Spark execution and the trusted writer are external. The included rule
-builders use DataFrame expressions, while unit tests exercise policy with small domain fakes rather
-than a fake Spark runtime.
-
-**Tests:** `test_broken_contract_skips_expensive_processing_and_publication`,
-`test_critical_runtime_failure_is_never_published`, and
-`test_warning_is_published_with_audit_evidence_and_notification`.
-
-## Auditable Financial Metrics
-
-**Problem:** A critical financial aggregate must identify the exact transactions used at publish
-time; rerunning an old query is not sufficient audit evidence.
-
-**Architecture:** `STARTED → stage hidden aggregate → DATA_WRITTEN → EVIDENCE_RECORDED →
-CONTROLS_VERIFIED → promote → COMPLETE`. Tracing reads persisted contribution rows scoped by
-`metric_run_id + aggregate_key`.
-
-**Guarantee:** State transitions cannot be skipped. Contribution evidence, expected controls, and
-the writer's committed count/total/snapshot receipt must reconcile before promotion. Missing or
-mismatched evidence transitions the run to `AUDIT_FAILED`; visibility requires both promotion and
-COMPLETE audit state. The guarantee lives in `publish_critical_metric`,
-`is_metric_consumer_visible`, and `trace_metric_to_transactions`.
-
-**Boundary / assumption:** The data commit and audit-store write are not one atomic transaction.
-The durable audit store must atomically record one run's evidence, and the serving layer must
-enforce both promotion and COMPLETE state. A run is scoped to one aggregate key. Normal BI metrics
-avoid row-level mappings: they use detailed Gold facts, an immutable Iceberg snapshot, and a
-versioned metric definition for on-demand reconstruction.
-
-**Tests:** `test_completed_metric_traces_exact_persisted_contributors`,
-`test_metric_without_contribution_evidence_is_not_visible`, and
-`test_control_mismatch_prevents_completion`, plus committed-output mismatch and invalid-transition
-tests.
-
-## Local checks
+Requires Python 3.11 or newer.
 
 ```bash
 python -m venv .venv
 .venv/bin/pip install -e '.[dev]'
-.venv/bin/pytest -q
-.venv/bin/ruff check .
 ```
 
-PyFlink, Kafka, ClickHouse, Spark, Iceberg, and durable object/audit stores are intentionally not
-started by these unit tests. Their deployment configuration, credentials, checkpoint recovery,
-and cross-system failure testing belong in an integration environment.
+On Windows, activate the environment and use the equivalent commands under `.venv\\Scripts`.
 
-## Official behaviour checked
+## Run the checks
 
-- [Flink checkpoints](https://nightlies.apache.org/flink/flink-docs-stable/docs/dev/datastream/fault-tolerance/checkpointing/),
-  [keyed state and TTL](https://nightlies.apache.org/flink/flink-docs-stable/docs/dev/datastream/fault-tolerance/state/),
-  [watermarks](https://nightlies.apache.org/flink/flink-docs-stable/docs/dev/datastream/event-time/generating_watermarks/),
-  and [Kafka source](https://nightlies.apache.org/flink/flink-docs-stable/docs/connectors/datastream/kafka/)
-- [PySpark DataFrame operations](https://spark.apache.org/docs/latest/api/python/user_guide/dataframes.html)
-- [ClickHouse replacement/deduplication behaviour](https://clickhouse.com/resources/engineering/clickhouse-optimize-table-final)
-- [Iceberg metadata and snapshots](https://iceberg.apache.org/docs/latest/spark-queries/)
+```bash
+.venv/bin/ruff format --check .
+.venv/bin/ruff check .
+.venv/bin/pytest -q
+```
+
+The unit tests execute the guarantee-bearing domain and policy logic directly. They intentionally
+do not start local substitutes for Kafka, Flink, ClickHouse, Spark, Iceberg, or cloud services.
+
+GitHub Actions run the same format, lint, and unit-test commands for pushes to `main` and pull
+requests. A separate lightweight Gitleaks workflow checks repository history for accidentally
+committed passwords, tokens, and other secrets.
+
+## Documentation
+
+- [Deep dives and guarantees](DEEP_DIVES.md)
+- [Design document (PDF)](docs/design/paytm-design-doc.pdf)
+- [Design document (Markdown)](docs/design/paytm-design-doc.md)
+- [Architecture decision records](docs/adr/README.md)
+- [Repository specification](SPEC.md)
+- [Working implementation guide](docs/working-implementation.md)
+- [Contributor guide](CONTRIBUTING.md)
+- [Agent guide](AGENTS.md)
+
+## Making it operational
+
+Turning these deep dives into a running platform requires real checkpoint storage, source and sink
+configuration, durable catalog and audit stores, production table contracts, credentials, and
+failure-injection integration tests. The repository documentation describes that path without
+claiming those external guarantees are implemented locally.
