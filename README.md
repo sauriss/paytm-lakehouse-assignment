@@ -54,6 +54,9 @@ do not start local substitutes for Kafka, Flink, ClickHouse, Spark, Iceberg, or 
 - [Design document (Markdown)](docs/design/paytm-design-doc.md)
 - [Architecture decision records](docs/adr/README.md)
 - [Repository specification](SPEC.md)
+- [Working implementation guide](docs/working-implementation.md)
+- [Contributor guide](CONTRIBUTING.md)
+- [Agent guide](AGENTS.md)
 
 ## Making it operational
 
